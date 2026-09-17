@@ -1,5 +1,57 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# ===========================================================
+#  SmartLib — Vagrantfile Multi-OS / Multi-Provider
+# ===========================================================
+#  Detecta automaticamente a arquitetura (x86_64 / ARM64) e
+#  o sistema operacional do host para escolher o box e os
+#  providers adequados.
+#
+#  Providers suportados:
+#    - VirtualBox  (Windows, macOS Intel, Linux x86_64)
+#    - VMware      (todos, recomendado para Apple Silicon)
+#    - Parallels   (macOS)
+#    - QEMU        (macOS ARM / Linux ARM, open-source)
+# ===========================================================
+
+require 'rbconfig'
+
+# ---- Detecção de SO e Arquitetura ----
+HOST_ARCH  = RbConfig::CONFIG['host_cpu'].downcase
+IS_ARM     = HOST_ARCH.match?(/arm|aarch64/)
+IS_MAC     = RUBY_PLATFORM.match?(/darwin/i)
+IS_LINUX   = RUBY_PLATFORM.match?(/linux/i)
+IS_WINDOWS = (RUBY_PLATFORM =~ /mingw|mswin|cygwin/) != nil
+
+# ---- Seleção do Box ----
+if IS_ARM
+  BOX_NAME = "bento/ubuntu-22.04-arm64"
+else
+  BOX_NAME = "ubuntu/jammy64"
+end
+
+# ---- Aviso de rede para macOS / Linux com VirtualBox ----
+if !IS_WINDOWS && !IS_ARM
+  networks_conf = "/etc/vbox/networks.conf"
+  if !File.exist?(networks_conf)
+    puts ""
+    puts "╔═══════════════════════════════════════════════════════════════════╗"
+    puts "║  AVISO: VirtualBox pode bloquear a rede 192.168.56.0/24.        ║"
+    puts "║  Se o 'vagrant up' falhar com erro de rede, execute:            ║"
+    puts "║                                                                 ║"
+    puts "║    sudo mkdir -p /etc/vbox                                      ║"
+    puts "║    echo '* 192.168.56.0/24' | sudo tee /etc/vbox/networks.conf  ║"
+    puts "║                                                                 ║"
+    puts "╚═══════════════════════════════════════════════════════════════════╝"
+    puts ""
+  end
+end
+
+puts ">> SmartLib — Host: #{RUBY_PLATFORM} | Arch: #{HOST_ARCH} | Box: #{BOX_NAME}"
+
 Vagrant.configure("2") do |config|
-  config.vm.box = "ubuntu/jammy64"
+  config.vm.box = BOX_NAME
   config.vm.boot_timeout = 600
 
   # =========================
@@ -9,10 +61,31 @@ Vagrant.configure("2") do |config|
     db.vm.hostname = "smartlib-database"
     db.vm.network "private_network", ip: "192.168.56.11"
 
+    # --- Provider: VirtualBox (Windows, macOS Intel, Linux x86_64) ---
     db.vm.provider "virtualbox" do |vb|
       vb.name = "SmartLib-Database"
       vb.memory = 2048
       vb.cpus = 1
+    end
+
+    # --- Provider: VMware Desktop (todos os SOs, recomendado para Apple Silicon) ---
+    db.vm.provider "vmware_desktop" do |vmw|
+      vmw.vmx["displayName"] = "SmartLib-Database"
+      vmw.vmx["memsize"]     = "2048"
+      vmw.vmx["numvcpus"]    = "1"
+    end
+
+    # --- Provider: Parallels (macOS) ---
+    db.vm.provider "parallels" do |prl|
+      prl.name   = "SmartLib-Database"
+      prl.memory = 2048
+      prl.cpus   = 1
+    end
+
+    # --- Provider: QEMU (alternativa open-source para ARM) ---
+    db.vm.provider "qemu" do |qe|
+      qe.memory = 2048
+      qe.smp    = 1
     end
 
     db.vm.provision "shell", inline: <<-SHELL
@@ -92,10 +165,31 @@ Vagrant.configure("2") do |config|
     app.vm.network "forwarded_port", guest: 80, host: 3000, auto_correct: true
     app.vm.network "forwarded_port", guest: 8080, host: 8080, auto_correct: true
 
+    # --- Provider: VirtualBox ---
     app.vm.provider "virtualbox" do |vb|
       vb.name = "SmartLib-App"
       vb.memory = 3072
       vb.cpus = 2
+    end
+
+    # --- Provider: VMware Desktop ---
+    app.vm.provider "vmware_desktop" do |vmw|
+      vmw.vmx["displayName"] = "SmartLib-App"
+      vmw.vmx["memsize"]     = "3072"
+      vmw.vmx["numvcpus"]    = "2"
+    end
+
+    # --- Provider: Parallels ---
+    app.vm.provider "parallels" do |prl|
+      prl.name   = "SmartLib-App"
+      prl.memory = 3072
+      prl.cpus   = 2
+    end
+
+    # --- Provider: QEMU ---
+    app.vm.provider "qemu" do |qe|
+      qe.memory = 3072
+      qe.smp    = 2
     end
 
     app.vm.provision "shell", inline: <<-SHELL
@@ -110,7 +204,11 @@ Vagrant.configure("2") do |config|
       # Cria swap para evitar falta de memória durante o build
       if [ ! -f /swapfile ]; then
         echo "Criando swap de 2GB..."
-        fallocate -l 2G /swapfile
+        if command -v fallocate > /dev/null 2>&1; then
+          fallocate -l 2G /swapfile
+        else
+          dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress
+        fi
         chmod 600 /swapfile
         mkswap /swapfile
         swapon /swapfile

@@ -17,9 +17,37 @@ https://github.com/Caioxlw/SistemaGestaoBiblioteca
 
 No computador hospedeiro:
 
-- VirtualBox
-- Vagrant
-- Internet
+- [Vagrant](https://www.vagrantup.com/) instalado
+- Conexão com a internet
+- Um provider de virtualização compatível (veja abaixo)
+
+### Por sistema operacional
+
+| SO | Provider | Box (automático) |
+|---|---|---|
+| Windows (x86_64) | VirtualBox | `ubuntu/jammy64` |
+| macOS Intel | VirtualBox | `ubuntu/jammy64` |
+| macOS Apple Silicon (M1/M2/M3/M4) | VMware Fusion, Parallels ou QEMU | `bento/ubuntu-22.04-arm64` |
+| Linux (x86_64) | VirtualBox | `ubuntu/jammy64` |
+| Linux (ARM64) | QEMU ou VMware | `bento/ubuntu-22.04-arm64` |
+
+> **Nota para macOS/Linux com VirtualBox:** se o `vagrant up` falhar com erro de rede, execute:
+> ```bash
+> sudo mkdir -p /etc/vbox
+> echo '* 192.168.56.0/24' | sudo tee /etc/vbox/networks.conf
+> ```
+
+> **Nota para Apple Silicon:** o VirtualBox não é compatível. Use VMware Fusion (gratuito para uso pessoal), Parallels ou QEMU:
+> ```bash
+> # Opção QEMU (open-source)
+> brew install qemu
+> vagrant plugin install vagrant-qemu
+> vagrant up --provider=qemu
+>
+> # Opção VMware
+> vagrant plugin install vagrant-vmware-desktop
+> vagrant up --provider=vmware_desktop
+> ```
 
 ## Executando
 
