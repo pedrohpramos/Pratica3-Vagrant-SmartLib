@@ -2,7 +2,86 @@ Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"
 
   # =========================
-  # VM 1 - Aplicação
+  # VM 1 - Banco de dados
+  # =========================
+  config.vm.define "database" do |db|
+    db.vm.hostname = "smartlib-database"
+    db.vm.network "private_network", ip: "192.168.56.11"
+
+    db.vm.provider "virtualbox" do |vb|
+      vb.name = "SmartLib-Database"
+      vb.memory = 2048
+      vb.cpus = 1
+    end
+
+    db.vm.provision "shell", inline: <<-SHELL
+      set -e
+
+      echo "======================================"
+      echo " CONFIGURANDO VM DO BANCO"
+      echo "======================================"
+
+      export DEBIAN_FRONTEND=noninteractive
+
+      apt-get update
+      apt-get install -y docker.io
+
+      systemctl enable --now docker
+
+      until docker info >/dev/null 2>&1; do
+        echo "Aguardando Docker..."
+        sleep 2
+      done
+
+      # Se o banco já existir, apenas garante que está iniciado.
+      if docker ps -a --format '{{.Names}}' | grep -q '^smartlib-db$'; then
+        docker start smartlib-db >/dev/null 2>&1 || true
+      else
+        echo "Baixando PostgreSQL 17..."
+        docker pull postgres:17
+
+        echo "Criando banco..."
+        docker run -d \
+          --name smartlib-db \
+          --restart unless-stopped \
+          -p 5432:5432 \
+          -e POSTGRES_DB=biblioteca \
+          -e POSTGRES_USER=user \
+          -e POSTGRES_PASSWORD=password \
+          postgres:17
+      fi
+
+      echo "Aguardando PostgreSQL ficar pronto..."
+
+      for i in $(seq 1 60); do
+        if docker exec smartlib-db pg_isready -U user -d biblioteca >/dev/null 2>&1; then
+          echo "PostgreSQL funcionando!"
+          break
+        fi
+
+        if [ "$i" -eq 60 ]; then
+          echo "PostgreSQL não iniciou a tempo."
+          docker logs smartlib-db
+          exit 1
+        fi
+
+        sleep 2
+      done
+
+      echo ""
+      echo "======================================"
+      echo " BANCO CONFIGURADO COM SUCESSO"
+      echo "======================================"
+      echo "IP:       192.168.56.11"
+      echo "Porta:    5432"
+      echo "Database: biblioteca"
+      echo "Usuario:  user"
+      echo "======================================"
+    SHELL
+  end
+
+  # =========================
+  # VM 2 - Aplicação
   # =========================
   config.vm.define "app" do |app|
     app.vm.hostname = "smartlib-app"
@@ -26,6 +105,16 @@ Vagrant.configure("2") do |config|
       echo "======================================"
 
       export DEBIAN_FRONTEND=noninteractive
+
+      # Cria swap para evitar falta de memória durante o build
+      if [ ! -f /swapfile ]; then
+        echo "Criando swap de 2GB..."
+        fallocate -l 2G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+        swapon /swapfile
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+      fi
 
       apt-get update
       apt-get install -y git curl ca-certificates docker.io
@@ -118,85 +207,6 @@ Vagrant.configure("2") do |config|
       echo "Frontend: http://localhost:3000"
       echo "Swagger:  http://localhost:8080/swagger"
       echo "Health:   http://localhost:8080/health"
-      echo "======================================"
-    SHELL
-  end
-
-  # =========================
-  # VM 2 - Banco de dados
-  # =========================
-  config.vm.define "database" do |db|
-    db.vm.hostname = "smartlib-database"
-    db.vm.network "private_network", ip: "192.168.56.11"
-
-    db.vm.provider "virtualbox" do |vb|
-      vb.name = "SmartLib-Database"
-      vb.memory = 2048
-      vb.cpus = 1
-    end
-
-    db.vm.provision "shell", inline: <<-SHELL
-      set -e
-
-      echo "======================================"
-      echo " CONFIGURANDO VM DO BANCO"
-      echo "======================================"
-
-      export DEBIAN_FRONTEND=noninteractive
-
-      apt-get update
-      apt-get install -y docker.io
-
-      systemctl enable --now docker
-
-      until docker info >/dev/null 2>&1; do
-        echo "Aguardando Docker..."
-        sleep 2
-      done
-
-      # Se o banco já existir, apenas garante que está iniciado.
-      if docker ps -a --format '{{.Names}}' | grep -q '^smartlib-db$'; then
-        docker start smartlib-db >/dev/null 2>&1 || true
-      else
-        echo "Baixando PostgreSQL 17..."
-        docker pull postgres:17
-
-        echo "Criando banco..."
-        docker run -d \
-          --name smartlib-db \
-          --restart unless-stopped \
-          -p 5432:5432 \
-          -e POSTGRES_DB=biblioteca \
-          -e POSTGRES_USER=user \
-          -e POSTGRES_PASSWORD=password \
-          postgres:17
-      fi
-
-      echo "Aguardando PostgreSQL ficar pronto..."
-
-      for i in $(seq 1 60); do
-        if docker exec smartlib-db pg_isready -U user -d biblioteca >/dev/null 2>&1; then
-          echo "PostgreSQL funcionando!"
-          break
-        fi
-
-        if [ "$i" -eq 60 ]; then
-          echo "PostgreSQL não iniciou a tempo."
-          docker logs smartlib-db
-          exit 1
-        fi
-
-        sleep 2
-      done
-
-      echo ""
-      echo "======================================"
-      echo " BANCO CONFIGURADO COM SUCESSO"
-      echo "======================================"
-      echo "IP:       192.168.56.11"
-      echo "Porta:    5432"
-      echo "Database: biblioteca"
-      echo "Usuario:  user"
       echo "======================================"
     SHELL
   end
