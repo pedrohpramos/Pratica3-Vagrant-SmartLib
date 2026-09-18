@@ -4,10 +4,10 @@ Projeto da prática de administração de servidores.
 
 ## Objetivo
 
-Subir automaticamente duas máquinas virtuais:
+Subir automaticamente duas máquinas virtuais integradas:
 
-- `app`: frontend + backend/API + Redis
-- `database`: PostgreSQL
+- `app` (192.168.56.10): Frontend (Nginx) + Backend/API (.NET 10)
+- `banco` (192.168.56.11): Banco de Dados (PostgreSQL) + Cache (Redis)
 
 A aplicação utilizada como base é:
 
@@ -57,49 +57,48 @@ Dentro desta pasta:
 vagrant up
 ```
 
-O Vagrant irá:
+O Vagrant irá provisionar duas VMs. O fluxo automático inclui:
 
-1. Criar a VM do banco.
-2. Instalar Docker.
-3. Subir PostgreSQL.
-4. Criar o banco `biblioteca`.
-5. Criar a VM da aplicação.
-6. Instalar Docker.
-7. Baixar o projeto do GitHub.
-8. Construir a imagem da API.
-9. Construir a imagem do frontend.
-10. Subir Redis.
-11. Configurar a API para acessar o PostgreSQL na outra VM.
-12. Subir o frontend com Nginx.
-13. Deixar tudo disponível sem precisar entrar via `vagrant ssh`.
+**Na VM `banco`:**
+1. Instalar PostgreSQL e Redis.
+2. Criar o banco de dados `biblioteca` e o usuário da aplicação.
+3. Liberar acessos para a rede privada.
+
+**Na VM `app`:**
+1. Instalar .NET 10 SDK, Nginx e dependências base.
+2. Aguardar o banco de dados ficar disponível.
+3. Clonar o projeto do GitHub.
+4. Compilar e publicar a API (.NET).
+5. Configurar e iniciar a API como um serviço em background (`systemd`).
+6. Configurar o Nginx para servir o frontend estático e atuar como proxy reverso para a API local.
+7. Deixar tudo disponível nas portas encaminhadas sem precisar acessar as VMs.
 
 ## Acessos
 
+O ambiente é configurado para ser acessado diretamente pelo seu navegador no computador hospedeiro ou em qualquer dispositivo na mesma rede.
+
 Frontend:
+http://localhost:8080
 
-http://localhost:3000
-
-ou:
-
-http://192.168.56.10
-
-Swagger:
-
+Swagger (Documentação da API):
 http://localhost:8080/swagger
 
 Health Check:
-
 http://localhost:8080/health
 
-## VMs
+Se preferir acessar de outro dispositivo na mesma rede, use o IP da sua máquina hospedeira na porta 8080 (ex: `http://192.168.1.5:8080`).
 
-Aplicação:
+## Arquitetura das VMs
 
+Aplicação (`app`):
 - IP: `192.168.56.10`
+- Encaminhamento de Portas (Host -> Convidado):
+  - `8080` -> `80` (Nginx: Frontend + Proxy para API)
+  - `5080` -> `8080` (Acesso direto à API .NET)
 
-Banco:
-
+Banco de Dados (`banco`):
 - IP: `192.168.56.11`
+- Serviços: PostgreSQL (5432) e Redis (6379) escutando na rede privada (192.168.56.0/24).
 
 ## Contas da aplicação
 
@@ -120,38 +119,43 @@ Aluno:
 
 ## Comandos úteis
 
-Subir:
+Subir o ambiente:
 
 ```bash
 vagrant up
 ```
 
-Ver status:
+Ver status das VMs:
 
 ```bash
 vagrant status
 ```
 
-Desligar:
+Desligar as VMs:
 
 ```bash
 vagrant halt
 ```
 
-Excluir as VMs:
+Excluir as VMs (perde os dados do banco):
 
 ```bash
 vagrant destroy -f
 ```
 
-Executar novamente os scripts de configuração:
+Executar novamente os scripts de configuração (sem recriar a VM do zero):
 
 ```bash
 vagrant provision
+```
+
+Verificar os logs da API na VM da aplicação:
+```bash
+vagrant ssh app -c "journalctl -u biblioteca-api -f"
 ```
 
 ## Observação
 
 O `vagrant ssh` não é necessário para utilizar a aplicação.
 
-Ele pode ser usado apenas para manutenção ou para verificar os serviços dentro das VMs.
+Ele deve ser usado apenas para manutenção, depuração ou para verificar os logs dos serviços dentro das VMs.
