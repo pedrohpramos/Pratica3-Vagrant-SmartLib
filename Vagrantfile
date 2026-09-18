@@ -37,12 +37,12 @@ if !IS_WINDOWS && !IS_ARM
   if !File.exist?(networks_conf)
     puts ""
     puts "╔═══════════════════════════════════════════════════════════════════╗"
-    puts "║  AVISO: VirtualBox pode bloquear a rede 192.168.56.0/24.        ║"
-    puts "║  Se o 'vagrant up' falhar com erro de rede, execute:            ║"
-    puts "║                                                                 ║"
-    puts "║    sudo mkdir -p /etc/vbox                                      ║"
-    puts "║    echo '* 192.168.56.0/24' | sudo tee /etc/vbox/networks.conf  ║"
-    puts "║                                                                 ║"
+    puts "║  AVISO: VirtualBox pode bloquear a rede 192.168.56.0/24.          ║"
+    puts "║  Se o 'vagrant up' falhar com erro de rede, execute:              ║"
+    puts "║                                                                   ║"
+    puts "║    sudo mkdir -p /etc/vbox                                        ║"
+    puts "║    echo '* 192.168.56.0/24' | sudo tee /etc/vbox/networks.conf    ║"
+    puts "║                                                                   ║"
     puts "╚═══════════════════════════════════════════════════════════════════╝"
     puts ""
   end
@@ -52,7 +52,8 @@ puts ">> SmartLib — Host: #{RUBY_PLATFORM} | Arch: #{HOST_ARCH} | Box: #{BOX_N
 
 Vagrant.configure("2") do |config|
   config.vm.box = BOX_NAME
-  config.vm.boot_timeout = 600
+  config.vm.boot_timeout = 900
+  config.vm.box_check_update = false
 
   # =========================
   # VM 1 - Banco de dados
@@ -66,6 +67,9 @@ Vagrant.configure("2") do |config|
       vb.name = "SmartLib-Database"
       vb.memory = 2048
       vb.cpus = 1
+      vb.linked_clone = true
+      vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
     end
 
     # --- Provider: VMware Desktop (todos os SOs, recomendado para Apple Silicon) ---
@@ -170,6 +174,9 @@ Vagrant.configure("2") do |config|
       vb.name = "SmartLib-App"
       vb.memory = 3072
       vb.cpus = 2
+      vb.linked_clone = true
+      vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+      vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"]
     end
 
     # --- Provider: VMware Desktop ---
@@ -265,6 +272,7 @@ Vagrant.configure("2") do |config|
         --network smartlib-net \
         --network-alias api \
         -p 8080:8080 \
+        -e ASPNETCORE_URLS="http://+:8080" \
         -e ConnectionStrings__DefaultConnection="Host=192.168.56.11;Port=5432;Database=biblioteca;Username=user;Password=password" \
         -e Redis__ConnectionString="smartlib-redis:6379" \
         -e Jwt__Secret='SmartLibSuperSecretKey2026!@#$%^&*()MinimoSegura32Chars' \
@@ -275,14 +283,15 @@ Vagrant.configure("2") do |config|
         smartlib-api
 
       echo "Aguardando API..."
-      for i in $(seq 1 60); do
-        if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then
+      # Aumentado o tempo para 120 tentativas e alterada a rota de verificação para o Swagger
+      for i in $(seq 1 120); do
+        if curl -fsS http://localhost:8080/swagger/index.html >/dev/null 2>&1; then
           echo "API funcionando!"
           break
         fi
 
-        if [ "$i" -eq 60 ]; then
-          echo "A API não respondeu a tempo."
+        if [ "$i" -eq 120 ]; then
+          echo "A API não respondeu a tempo. Veja o log abaixo:"
           docker logs smartlib-api
           exit 1
         fi
@@ -303,9 +312,8 @@ Vagrant.configure("2") do |config|
       echo " SMARTLIB CONFIGURADO COM SUCESSO"
       echo "======================================"
       echo "Frontend: http://192.168.56.10"
-      echo "Frontend: http://localhost:3000"
+      echo "Frontend (Host): http://localhost:3000"
       echo "Swagger:  http://localhost:8080/swagger"
-      echo "Health:   http://localhost:8080/health"
       echo "======================================"
     SHELL
   end
